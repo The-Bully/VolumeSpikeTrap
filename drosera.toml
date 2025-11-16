@@ -1,0 +1,17 @@
+ethereum_rpc = "https://ethereum-hoodi-rpc.publicnode.com/"
+drosera_rpc = "https://relay.hoodi.drosera.io/"
+eth_chain_id = 560048
+drosera_address = "0x91cB447BaFc6e0EA0F4Fe056F5a9b1F14bb06e5D"
+
+[traps]
+
+[traps.volume_spike]
+path = "out/VolumeSpikeTrap.sol/VolumeSpikeTrap.json"
+response_contract = "0x4678FA521a39ab9A54F1D667A1C4B075C8FbF1c2"
+response_function = "respondToVolumeSpike(uint256,uint256,uint256,uint256)"
+cooldown_period_blocks = 20
+min_number_of_operators = 1
+max_number_of_operators = 3
+block_sample_size = 10
+private_trap = true
+whitelist = ["0x8d98142f67c8d152d85d2ba905ac52a30ad61b21"]
