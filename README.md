@@ -1,58 +1,71 @@
-📈 Volume Spike Trap
+# 📈 Volume Spike Trap
 
-Detect sudden increases in trading volume on Hoodi Testnet
+Detect abnormal spikes in trading volume on Hoodi Testnet using a Drosera trap.
 
-This trap monitors trading activity for a target ERC-20 token and identifies abnormal spikes in trading volume. When the increase exceeds a configurable threshold, it signals a potential volatility event—helping automated responders (or humans) react quickly to emerging market conditions.
+This trap monitors **cumulative trading volume** from an external oracle and detects **sudden increases in per-interval volume**. When activity exceeds a configurable threshold, it triggers a responder—helping surface potential volatility events early.
 
-🎯 Purpose
+---
 
-Sudden increases in trading volume often precede:
+## 🎯 What It Detects
 
-Market volatility
+Volume spikes often precede:
 
-Price breakouts
+* Market volatility
+* Price breakouts
+* Liquidity events
+* Manipulation attempts
+* Whale activity
 
-Manipulation attempts
+---
 
-Liquidity events
+## ⚙️ How It Works
 
-Whale accumulation or distribution
+### `collect()`
 
-This trap lets you automatically detect such events.
+* Reads cumulative trading volume from an oracle (API3-style proxy)
+* Captures the current block number
+* Encodes `(cumulativeVolume, blockNumber)`
+* Uses `try/catch` so oracle failures never revert
 
-⚙️ How It Works
-collect()
+### `shouldRespond()`
 
-Each cycle, the trap retrieves:
+* Computes the **latest volume delta** from cumulative samples
+* Builds a **moving average of historical deltas**
+* Applies a **BPS-based threshold** (e.g. 2000 = 20%)
+* Requires a **minimum number of valid samples** to reduce noise
+* Returns a typed payload when a spike is detected
 
-Current trading volume over the last block(s)
+Payload:
 
-Block number or timestamp (for telemetry)
+```
+(avgDelta, newDelta, deltaAboveAvg, blockNumber)
+```
 
-Optional: cumulative volume for smoothing
+---
 
-The data is encoded and returned to Drosera.
+## 🔔 Responder
 
-shouldRespond()
+When triggered, a responder contract (e.g. `VolumeSpikeResponse.sol`) is called and typically emits an event containing:
 
-The trap compares:
+* Average historical delta
+* Newest delta
+* Delta above average
+* Block number
+* Threshold (BPS)
 
-Latest volume
+This provides an immutable on-chain audit log of volume spike events.
 
-Previous sample volume
+---
 
-If the percent increase exceeds the defined threshold (BPS-based), the trap returns true and encodes (prevVolume, newVolume, delta, blockNumber) for the responder.
+## 🛡️ Design Notes
 
-Responder
+* Planner-safe (empty blobs skipped)
+* Works with cumulative oracles (API3 / Chainlink-style)
+* Stateless trap (constants only)
+* Cooldown handled via Drosera TOML config
 
-Your responder contract (e.g., VolumeSpikeResponse.sol) is called when a spike is detected. It typically emits:
+---
 
-Previous volume
+## ✅ Summary
 
-New volume
-
-Delta amount
-
-Timestamp or block number
-
-This creates an immutable audit log.
+A lightweight, production-ready Drosera trap for detecting unusual trading activity using cumulative volume data.
