@@ -3,29 +3,33 @@ pragma solidity ^0.8.20;
 
 import {ITrap} from "./interfaces/ITrap.sol";
 
-interface IVolumeOracle {
-    function getVolume() external view returns (uint256);
+
+interface IApi3Proxy {
+    function read() external view returns (int224 value, uint32 timestamp);
 }
 
 contract VolumeSpikeTrap is ITrap {
-    address public constant ORACLE = 0x6c75b16496384caE307f7E842e7133590E6D79Af;
+    address public constant ORACLE =
+        0x6c75b16496384caE307f7E842e7133590E6D79Af;
 
-    // 2000 = 20% increase required
+    
     uint256 public constant THRESHOLD_BPS = 2000;
 
     // -------------------------
     // collect() → sample data
     // -------------------------
     function collect() external view override returns (bytes memory) {
-        uint256 volume = 0;
+        uint256 cumVolume = 0;
 
-        try IVolumeOracle(ORACLE).getVolume() returns (uint256 v) {
-            volume = v;
+        try IApi3Proxy(ORACLE).read() returns (int224 value, uint32) {
+            if (value > 0) {
+                cumVolume = uint256(uint224(value));
+            }
         } catch {
-            // leave volume = 0
+            // leave cumVolume = 0
         }
 
-        return abi.encode(volume, block.number);
+        return abi.encode(cumVolume, block.number);
     }
 
     // ---------------------------------------
@@ -37,34 +41,62 @@ contract VolumeSpikeTrap is ITrap {
         override
         returns (bool, bytes memory)
     {
+        
         if (data.length < 2) return (false, "");
+        if (data[0].length == 0) return (false, "");
 
-        (uint256 newVol, uint256 newBlock) =
+        
+        (uint256 newCum, uint256 newBlock) =
             abi.decode(data[0], (uint256, uint256));
 
-        uint256 totalVol = 0;
-        uint256 count = 0;
+        if (data[1].length == 0) return (false, "");
 
-        // calculate average volume of older samples
-        for (uint256 i = 1; i < data.length; i++) {
-            (uint256 vol, ) = abi.decode(data[i], (uint256, uint256));
-            totalVol += vol;
-            count++;
+        
+        (uint256 prevCum, ) =
+            abi.decode(data[1], (uint256, uint256));
+
+        if (newCum <= prevCum) return (false, "");
+
+        uint256 newDelta = newCum - prevCum;
+
+       
+        uint256 sum;
+        uint256 cnt;
+
+        for (uint256 i = 2; i < data.length; i++) {
+            if (data[i].length == 0 || data[i - 1].length == 0) continue;
+
+            (uint256 older, ) =
+                abi.decode(data[i - 1], (uint256, uint256));
+            (uint256 newer, ) =
+                abi.decode(data[i], (uint256, uint256));
+
+            if (newer <= older) continue;
+
+            sum += (newer - older);
+            cnt++;
         }
 
-        if (count == 0) return (false, "");
+       
+        if (cnt < 3) return (false, "");
 
-        uint256 avgVol = totalVol / count;
+        uint256 avgDelta = sum / cnt;
+        if (avgDelta == 0) return (false, "");
 
-        if (avgVol == 0) return (false, "");
+        uint256 threshold =
+            avgDelta + ((avgDelta * THRESHOLD_BPS) / 10_000);
 
-        // spike detection
-        uint256 thresholdVol = avgVol + ((avgVol * THRESHOLD_BPS) / 10000);
-
-        if (newVol >= thresholdVol) {
-            return (true, abi.encode(avgVol, newVol, newVol - avgVol, newBlock));
+        if (newDelta >= threshold) {
+            return (
+                true,
+                abi.encode(
+                    avgDelta,
+                    newDelta,
+                    newDelta - avgDelta,
+                    newBlock
+                )
+            );
         }
-
-        return (false, "");
+         return (false, "");
     }
 }
